@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --color-borrow-navy: #001A48;
+  --color-borrow-navy-hover: #002669;
+  --color-borrow-navy-active: #001336;
+  --color-borrow-teal: #00B4A7;
+  --color-borrow-teal-hover: #009e93;
+  --color-borrow-teal-light: #e6f7f6;
+  --color-borrow-bg: #F8FAFC;
+  --color-borrow-border: #E2E8F0;
+  --color-borrow-muted: #64748B;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+@layer base {
+  *, ::before, ::after {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    font-family: var(--font-sans);
+    background-color: #F8FAFC;
+    color: #0F172A;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Subtle background glow effect matching the designs */
+.auth-ambient-bg {
+  background-color: #F8FAFC;
+  background-image: 
+    radial-gradient(ellipse 600px 600px at 85% 15%, rgba(200, 240, 255, 0.45) 0%, rgba(240, 249, 255, 0.2) 50%, transparent 80%),
+    radial-gradient(ellipse 500px 500px at 15% 85%, rgba(220, 252, 245, 0.35) 0%, transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Custom subtle shadow matching the design cards */
+.borrow-card-shadow {
+  box-shadow: 
+    0 1px 3px 0 rgba(0, 26, 72, 0.04),
+    0 10px 25px -5px rgba(0, 26, 72, 0.07),
+    0 8px 10px -6px rgba(0, 26, 72, 0.04);
+}
