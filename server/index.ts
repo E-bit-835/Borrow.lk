@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { config } from './config/env';
 import { verifyConnection } from './config/db';
 import apiRoutes from './routes';
@@ -36,6 +37,17 @@ app.use('/uploads', express.static(uploadsDir));
 // Mount REST API
 app.use('/api', apiRoutes);
 app.use('/api', notFoundHandler);
+
+// Built frontend (npm run build): served by this server when hosting both on one service
+const distDir = path.resolve(process.cwd(), 'dist');
+if (fs.existsSync(path.join(distDir, 'index.html'))) {
+  app.use(express.static(distDir));
+  // Any other page address is handled by the React router
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/uploads')) return next();
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
 
 // Global Error Handler
 app.use(errorHandler);

@@ -8,11 +8,8 @@ function resolveApiBaseUrl(): string {
   if (fromEnv && fromEnv.trim()) {
     return fromEnv.replace(/\/$/, '');
   }
-  // In Vite dev, use same-origin /api (proxied to Express) to avoid Failed to fetch / CORS
-  if (import.meta.env.DEV) {
-    return '/api';
-  }
-  return 'http://localhost:5000/api';
+  // Same-origin /api: proxied to Express in Vite dev, served by Express itself when hosted
+  return '/api';
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();

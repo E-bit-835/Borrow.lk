@@ -7,6 +7,7 @@
     "dev": "concurrently -n backend,frontend -c blue,magenta \"npm:dev:backend\" \"npm:dev:frontend\"",
     "dev:frontend": "vite",
     "dev:backend": "tsx watch server/index.ts",
+    "start": "tsx server/index.ts",
     "start:backend": "tsx server/index.ts",
     "db:migrate": "tsx server/db/migrate.ts",
     "db:seed": "tsx server/db/seed.ts",

@@ -15,6 +15,8 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   corsOrigins: (process.env.CORS_ORIGIN || 'http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174')
     .split(',')
+    // Render sets RENDER_EXTERNAL_URL to the service's own address, so the site may call its own API
+    .concat(process.env.RENDER_EXTERNAL_URL || [])
     .map(origin => origin.trim()),
   // When true, "Become a Host / Provider" applications wait for admin approval instead of being approved instantly
   requirePartnerApproval: process.env.REQUIRE_PARTNER_APPROVAL === 'true',
