@@ -5,7 +5,7 @@ import { Plus } from 'lucide-react';
 import { adminService, type Payment } from '../../services/admin';
 import { RecordPaymentDialog } from '../../components/admin/adminDialogs';
 
-const METHOD: Record<string, string> = { bank_transfer: 'Bank transfer', cash_deposit: 'Cash deposit', online_transfer: 'Online transfer', cash: 'Cash' };
+const METHOD: Record<string, string> = { bank_transfer: 'Bank transfer', cash_deposit: 'Cash deposit', online_transfer: 'Online transfer', cash: 'Cash', card: 'Card' };
 type Tab = 'pending' | 'paid' | 'rejected' | 'all';
 type Action = { payment: Payment; status: 'paid' | 'rejected' };
 

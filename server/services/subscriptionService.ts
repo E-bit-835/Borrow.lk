@@ -1,11 +1,16 @@
 import { query } from '../config/db';
+import crypto from 'crypto';
 import { notify } from '../utils/notify';
+import { config } from '../config/env';
 
 /**
  * Provider-side monetisation: hosts and providers buy a plan to publish more listings.
- * Customers never pay. There is no card gateway: a host submits a payment (e.g. a bank
- * transfer reference) and an administrator confirms it, which activates the plan.
+ * Customers never pay. A host either submits a manual payment (e.g. a bank transfer reference)
+ * that an administrator confirms, or pays by card through PayHere, which confirms it automatically.
  */
+const md5 = (s: string) => crypto.createHash('md5').update(s).digest('hex').toUpperCase();
+/** A card payment that was started but not finished: kept out of every list until PayHere reports on it. */
+const NOT_UNFINISHED_CARD = `NOT (sp.method = 'card' AND sp.status = 'pending')`;
 function httpError(message: string, code: string, status: number) {
   const error: any = new Error(message);
   error.code = code;
@@ -120,7 +125,7 @@ export class SubscriptionService {
     const plan = planRes.rows[0];
     if (!plan) throw httpError('Plan not found.', 'NOT_FOUND', 404);
     if (plan.is_default || parseFloat(plan.price) === 0) throw httpError('The free plan does not need a payment.', 'FREE_PLAN', 400);
-    const open = await query(`SELECT 1 FROM subscription_payments WHERE user_id = $1 AND status = 'pending'`, [userId]);
+    const open = await query(`SELECT 1 FROM subscription_payments WHERE user_id = $1 AND status = 'pending' AND method <> 'card'`, [userId]);
     if (open.rows.length > 0) {
       throw httpError('You already have a payment waiting for confirmation.', 'PAYMENT_PENDING', 400);
     }
@@ -131,9 +136,92 @@ export class SubscriptionService {
     return this.formatPayment(res.rows[0]);
   }
 
+  static cardPaymentsEnabled() {
+    return Boolean(config.payhere.merchantId && config.payhere.merchantSecret);
+  }
+
+  /**
+   * Starts a card payment: records it and returns the form the browser posts to PayHere.
+   * Card details are entered on PayHere's page and never reach this server.
+   */
+  static async startCardPayment(userId: string, planId: string, siteUrl: string) {
+    if (!this.cardPaymentsEnabled()) throw httpError('Card payments are not available yet.', 'CARD_NOT_CONFIGURED', 503);
+    const plan = (await query(`SELECT * FROM subscription_plans WHERE id = $1 AND is_active = TRUE`, [planId])).rows[0];
+    if (!plan) throw httpError('Plan not found.', 'NOT_FOUND', 404);
+    if (plan.is_default || parseFloat(plan.price) === 0) throw httpError('The free plan does not need a payment.', 'FREE_PLAN', 400);
+    const user = (await query(`SELECT name, email, phone, district FROM users WHERE id = $1`, [userId])).rows[0];
+
+    // An earlier attempt that was never finished is replaced
+    await query(`DELETE FROM subscription_payments WHERE user_id = $1 AND method = 'card' AND status = 'pending'`, [userId]);
+    const row = (
+      await query(
+        `INSERT INTO subscription_payments (user_id, plan_id, plan_name, amount, method, reference) VALUES ($1, $2, $3, $4, 'card', 'Card payment') RETURNING id`,
+        [userId, plan.id, plan.name, plan.price]
+      )
+    ).rows[0];
+
+    const { merchantId, merchantSecret, sandbox } = config.payhere;
+    const amount = parseFloat(plan.price).toFixed(2);
+    const base = config.publicUrl || siteUrl;
+    const [firstName, ...rest] = String(user.name || 'BorrowLK member').trim().split(/\s+/);
+    return {
+      action: sandbox ? 'https://sandbox.payhere.lk/pay/checkout' : 'https://www.payhere.lk/pay/checkout',
+      fields: {
+        merchant_id: merchantId,
+        return_url: `${base}/provider/subscription?card=return`,
+        cancel_url: `${base}/provider/subscription?card=cancelled`,
+        notify_url: `${base}/api/payments/payhere/notify`,
+        order_id: row.id,
+        items: `BorrowLK ${plan.name} plan (${plan.duration_days} days)`,
+        currency: 'LKR',
+        amount,
+        first_name: firstName,
+        last_name: rest.join(' ') || '-',
+        email: user.email,
+        phone: user.phone || '0000000000',
+        address: user.district || 'Sri Lanka',
+        city: user.district || 'Colombo',
+        country: 'Sri Lanka',
+        hash: md5(merchantId + row.id + amount + 'LKR' + md5(merchantSecret)),
+      } as Record<string, string>,
+    };
+  }
+
+  /** PayHere's server-to-server report on a card payment. Nothing is trusted until the signature matches. */
+  static async handlePayHereNotification(body: Record<string, any>) {
+    const { merchantId, merchantSecret } = config.payhere;
+    const orderId = String(body.order_id || '');
+    const amount = String(body.payhere_amount || '');
+    const currency = String(body.payhere_currency || '');
+    const statusCode = String(body.status_code ?? '');
+    const expected = md5(merchantId + orderId + amount + currency + statusCode + md5(merchantSecret));
+    if (!this.cardPaymentsEnabled() || body.merchant_id !== merchantId || String(body.md5sig || '').toUpperCase() !== expected) {
+      throw httpError('Invalid payment notification.', 'INVALID_SIGNATURE', 400);
+    }
+
+    const payment = (await query(`SELECT * FROM subscription_payments WHERE id = $1 AND method = 'card'`, [orderId])).rows[0];
+    if (!payment) throw httpError('Payment not found.', 'NOT_FOUND', 404);
+    if (payment.status !== 'pending') return { status: payment.status }; // PayHere may repeat a notification
+
+    if (statusCode === '2') {
+      if (currency !== 'LKR' || Math.abs(parseFloat(amount) - parseFloat(payment.amount)) > 0.009) {
+        throw httpError('The amount paid does not match the plan.', 'AMOUNT_MISMATCH', 400);
+      }
+      await query(`UPDATE subscription_payments SET reference = $1 WHERE id = $2`, [`PayHere ${String(body.payment_id || '').slice(0, 100)}`, orderId]);
+      await this.reviewPayment(orderId, 'paid', true);
+      return { status: 'paid' };
+    }
+    if (statusCode === '-1' || statusCode === '-2') {
+      await query(`UPDATE subscription_payments SET status = 'rejected', reviewed_at = NOW(), reference = $1 WHERE id = $2`, [statusCode === '-1' ? 'Card payment cancelled' : 'Card payment failed', orderId]);
+      await notify(payment.user_id, 'system', 'Card payment not completed', `Your card payment for the ${payment.plan_name} plan did not go through. No money was taken. You can try again.`, '/provider/subscription');
+      return { status: 'rejected' };
+    }
+    return { status: 'pending' };
+  }
+
   static async listPayments(filters: { status?: string; userId?: string }) {
     const params: any[] = [];
-    let where = 'WHERE 1=1';
+    let where = `WHERE ${NOT_UNFINISHED_CARD}`;
     if (filters.status && filters.status !== 'all') {
       params.push(filters.status);
       where += ` AND sp.status = $${params.length}`;
@@ -151,11 +239,13 @@ export class SubscriptionService {
   }
 
   /** Admin decision. Confirming a payment starts (or renews) the subscription. */
-  static async reviewPayment(id: string, status: 'paid' | 'rejected') {
+  static async reviewPayment(id: string, status: 'paid' | 'rejected', byGateway = false) {
     const res = await query(`SELECT * FROM subscription_payments WHERE id = $1`, [id]);
     const payment = res.rows[0];
     if (!payment) throw httpError('Payment not found.', 'NOT_FOUND', 404);
     if (payment.status !== 'pending') throw httpError('This payment has already been reviewed.', 'ALREADY_REVIEWED', 400);
+    // Only the card gateway's signed notification can settle a card payment
+    if (payment.method === 'card' && !byGateway) throw httpError('Card payments are confirmed automatically.', 'CARD_PAYMENT', 400);
 
     await query(`UPDATE subscription_payments SET status = $1, reviewed_at = NOW() WHERE id = $2`, [status, id]);
 

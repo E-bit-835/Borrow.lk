@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { CheckCircle2, Clock } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { CheckCircle2, Clock, CreditCard, Lock } from 'lucide-react';
 import { ProviderLayout } from '../../components/provider/ProviderLayout';
 import { PageHeader, Card, Badge, Button, StatusBadge, DataTable, Td, useAdminData, formatDate } from '../../components/admin/adminUi';
 import { hostService } from '../../services/host';
@@ -8,6 +9,7 @@ import type { Plan } from '../../services/admin';
 const input =
   'w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#001A48]/15 focus:border-[#001A48]';
 const label = 'block text-xs font-semibold text-slate-700 mb-1.5';
+const CARD = { value: 'card', label: 'Card payment (Visa / Mastercard)' };
 const METHODS = [
   { value: 'bank_transfer', label: 'Bank transfer' },
   { value: 'online_transfer', label: 'Online transfer' },
@@ -23,9 +25,44 @@ export const ProviderSubscriptionPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Back from the card payment page: the gateway confirms the payment a few seconds later
+  const [params, setParams] = useSearchParams();
+  const cardResult = params.get('card');
+  useEffect(() => {
+    if (cardResult !== 'return') return;
+    const timers = [3000, 8000].map((ms) => setTimeout(reload, ms));
+    return () => timers.forEach(clearTimeout);
+  }, [cardResult]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const payByCard = async () => {
+    if (!chosen) return;
+    setFormError(null);
+    setSaving(true);
+    try {
+      const { action, fields } = await hostService.startCardPayment(chosen.id);
+      // Card details are entered on the payment provider's page, never here
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = action;
+      for (const [name, value] of Object.entries(fields)) {
+        const field = document.createElement('input');
+        field.type = 'hidden';
+        field.name = name;
+        field.value = value;
+        form.appendChild(field);
+      }
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err: any) {
+      setFormError(err.message || 'Could not start the card payment.');
+      setSaving(false);
+    }
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chosen) return;
+    if (method === 'card') return payByCard();
     setFormError(null);
     if (reference.trim().length < 3) return setFormError('Enter the reference from your payment slip or transfer.');
     setSaving(true);
@@ -53,6 +90,8 @@ export const ProviderSubscriptionPage: React.FC = () => {
   }
 
   const pending = data.payments.find((p) => p.status === 'pending');
+  const methods = data.cardPayments ? [CARD, ...METHODS] : METHODS;
+  const byCard = method === 'card' && data.cardPayments;
   const limit = data.listingLimit;
   const usedPct = limit ? Math.min(100, Math.round((data.listingsUsed / limit) * 100)) : 0;
   const atLimit = limit !== null && data.listingsUsed >= limit;
@@ -84,6 +123,20 @@ export const ProviderSubscriptionPage: React.FC = () => {
           </div>
         </div>
       </Card>
+
+      {cardResult && (
+        <Card className={`p-4 mb-6 flex items-start gap-3 ${cardResult === 'return' ? 'bg-teal-50 border-teal-200' : 'bg-slate-50'}`}>
+          <CreditCard className={`w-5 h-5 shrink-0 mt-0.5 ${cardResult === 'return' ? 'text-teal-600' : 'text-slate-500'}`} />
+          <p className="text-sm text-slate-800 flex-1">
+            {cardResult === 'return'
+              ? 'Thank you. Your card payment is being confirmed and your plan will update here in a few seconds.'
+              : 'The card payment was cancelled. No money was taken.'}
+          </p>
+          <button type="button" onClick={() => setParams({}, { replace: true })} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
+            Dismiss
+          </button>
+        </Card>
+      )}
 
       {pending && (
         <Card className="p-4 mb-6 flex items-start gap-3 bg-amber-50 border-amber-200">
@@ -121,6 +174,7 @@ export const ProviderSubscriptionPage: React.FC = () => {
                   disabled={!!pending}
                   onClick={() => {
                     setChosen(p);
+                    setMethod(data.cardPayments ? 'card' : 'bank_transfer');
                     setFormError(null);
                   }}
                 >
@@ -167,27 +221,43 @@ export const ProviderSubscriptionPage: React.FC = () => {
             <div>
               <h2 className="text-base font-bold text-slate-900">{chosen.name} plan</h2>
               <p className="text-sm text-slate-600 mt-1">
-                Pay <span className="font-semibold text-slate-900">Rs. {chosen.price.toLocaleString()}</span> for {chosen.durationDays} days, then enter the
-                payment reference below. Our team confirms it and your plan is activated.
+                {byCard ? (
+                  <>
+                    Pay <span className="font-semibold text-slate-900">Rs. {chosen.price.toLocaleString()}</span> for {chosen.durationDays} days by card. Your
+                    plan is activated as soon as the payment goes through.
+                  </>
+                ) : (
+                  <>
+                    Pay <span className="font-semibold text-slate-900">Rs. {chosen.price.toLocaleString()}</span> for {chosen.durationDays} days, then enter the
+                    payment reference below. Our team confirms it and your plan is activated.
+                  </>
+                )}
               </p>
             </div>
             <div>
-              <label htmlFor="sp-method" className={label}>How did you pay?</label>
+              <label htmlFor="sp-method" className={label}>{byCard ? 'How do you want to pay?' : 'How did you pay?'}</label>
               <select id="sp-method" value={method} onChange={(e) => setMethod(e.target.value)} className={`${input} cursor-pointer`}>
-                {METHODS.map((m) => (
+                {methods.map((m) => (
                   <option key={m.value} value={m.value}>{m.label}</option>
                 ))}
               </select>
             </div>
-            <div>
-              <label htmlFor="sp-ref" className={label}>Payment reference</label>
-              <input id="sp-ref" type="text" maxLength={255} value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. the transfer or slip number" className={input} />
-            </div>
+            {byCard ? (
+              <p className="flex items-start gap-2 text-xs text-slate-500 bg-slate-50 rounded-xl px-3 py-2.5">
+                <Lock className="w-4 h-4 shrink-0 text-slate-400" />
+                You will enter your card details on PayHere's secure payment page. BorrowLK never sees or stores your card number.
+              </p>
+            ) : (
+              <div>
+                <label htmlFor="sp-ref" className={label}>Payment reference</label>
+                <input id="sp-ref" type="text" maxLength={255} value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. the transfer or slip number" className={input} />
+              </div>
+            )}
             {formError && <p role="alert" className="text-sm font-medium text-rose-600">{formError}</p>}
             <div className="flex justify-end gap-2">
               <Button onClick={() => setChosen(null)}>Cancel</Button>
               <Button type="submit" variant="primary" disabled={saving}>
-                {saving ? 'Submitting...' : 'Submit payment'}
+                {byCard ? (saving ? 'Opening payment page...' : `Pay Rs. ${chosen.price.toLocaleString()} by card`) : saving ? 'Submitting...' : 'Submit payment'}
               </Button>
             </div>
           </form>

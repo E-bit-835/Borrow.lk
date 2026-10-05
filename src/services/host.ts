@@ -62,6 +62,8 @@ export interface HostSubscription {
   listingsUsed: number;
   listingLimit: number | null;
   payments: Payment[];
+  /** True when paying by card is switched on */
+  cardPayments: boolean;
 }
 
 /** Host / provider workspace API. The server only ever returns or changes the signed-in account's own data. */
@@ -83,6 +85,7 @@ export const hostService = {
     api.post<string[]>(`/host/listings/${listingId}/blocked-dates`, { dates, blocked }),
 
   subscription: () => api.get<HostSubscription>('/host/subscription'),
+  startCardPayment: (planId: string) => api.post<{ action: string; fields: Record<string, string> }>('/host/subscription/card', { planId }),
   submitPayment: (data: { planId: string; method: string; reference: string }) => api.post<Payment>('/host/subscription/payments', data),
 
   reviews: () => api.get<HostReview[]>('/host/reviews'),

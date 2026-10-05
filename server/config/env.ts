@@ -38,6 +38,14 @@ export const config = {
     apiKey: process.env.AI_API_KEY || (process.env.AI_BASE_URL ? '' : process.env.GEMINI_API_KEY || ''),
     model: process.env.AI_MODEL || (process.env.AI_BASE_URL ? 'llama-3.3-70b-versatile' : process.env.GEMINI_MODEL || 'gemini-3.8-flash'),
   },
+  // Card payments for subscription plans (PayHere). Off until the merchant id and secret are set.
+  payhere: {
+    merchantId: process.env.PAYHERE_MERCHANT_ID || '',
+    merchantSecret: process.env.PAYHERE_MERCHANT_SECRET || '',
+    sandbox: process.env.PAYHERE_SANDBOX !== 'false',
+  },
+  // Public address of the site, used in links that outside services call back (Render sets RENDER_EXTERNAL_URL)
+  publicUrl: (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, ''),
   gemini: {
     apiKey: process.env.GEMINI_API_KEY || '',
     model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',

@@ -10,6 +10,7 @@ import adminRoutes from './adminRoutes';
 import hostRoutes from './hostRoutes';
 import meRoutes from './meRoutes';
 import aiRoutes from './aiRoutes';
+import paymentRoutes from './paymentRoutes';
 import { ProductController } from '../controllers/productController';
 
 const router = Router();
@@ -39,5 +40,6 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/admin', adminRoutes);
 router.use('/host', hostRoutes);
 router.use('/me', meRoutes);
+router.use('/payments', paymentRoutes); // Card gateway callbacks
 
 export default router;

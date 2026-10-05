@@ -217,7 +217,7 @@ router.get(
       SubscriptionService.entitlement(req.user!.id),
       SubscriptionService.listPayments({ userId: req.user!.id }),
     ]);
-    return { plans, ...entitlement, payments };
+    return { plans, ...entitlement, payments, cardPayments: SubscriptionService.cardPaymentsEnabled() };
   })
 );
 
@@ -231,6 +231,13 @@ router.post(
     })
   ),
   handle((req) => SubscriptionService.submitPayment(req.user!.id, req.body))
+);
+
+// Pay for a plan by card: returns the PayHere checkout form for the browser to submit
+router.post(
+  '/subscription/card',
+  validate(z.object({ planId: z.string().min(1) })),
+  handle((req) => SubscriptionService.startCardPayment(req.user!.id, req.body.planId, String(req.headers.origin || '')))
 );
 
 // ---------- Reviews on my listings

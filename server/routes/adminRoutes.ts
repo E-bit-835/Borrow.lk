@@ -45,7 +45,7 @@ router.get(
       count(`SELECT count(*)::int n FROM orders WHERE status = 'pending'`),
       count(`SELECT count(*)::int n FROM users WHERE host_status = 'pending' OR provider_status = 'pending'`),
       count(`SELECT count(*)::int n FROM activity_logs WHERE action = 'report_listing' AND COALESCE(details->>'status', 'open') = 'open'`),
-      count(`SELECT count(*)::int n FROM subscription_payments WHERE status = 'pending'`),
+      count(`SELECT count(*)::int n FROM subscription_payments WHERE status = 'pending' AND method <> 'card'`),
     ]);
     const recentUsers = await query(`SELECT * FROM users WHERE role <> 'admin' ORDER BY created_at DESC LIMIT 5`);
     const recentRequests = await query(
