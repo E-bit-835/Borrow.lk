@@ -90,8 +90,8 @@ export const ProviderSubscriptionPage: React.FC = () => {
   }
 
   const pending = data.payments.find((p) => p.status === 'pending');
-  const methods = data.cardPayments ? [CARD, ...METHODS] : METHODS;
-  const byCard = method === 'card' && data.cardPayments;
+  const methods = [CARD, ...METHODS];
+  const byCard = method === 'card';
   const limit = data.listingLimit;
   const usedPct = limit ? Math.min(100, Math.round((data.listingsUsed / limit) * 100)) : 0;
   const atLimit = limit !== null && data.listingsUsed >= limit;
